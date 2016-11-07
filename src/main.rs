@@ -1,7 +1,6 @@
 #![feature(try_from)]
 #[macro_use]
 
-extern crate bencode;
 extern crate crypto;
 extern crate rand;
 extern crate rpassword;
