@@ -14,5 +14,5 @@ a little GnuPG-like command line tool for post-quantum cryptography
 rand = "0.3"
 rpassword = "0.3.0"
 rust-crypto = "0.2.36"
-rustc_serialize = "0.3.19"
+rustc-serialize = "0.3.19"
 sarkara = "0.5.1"
