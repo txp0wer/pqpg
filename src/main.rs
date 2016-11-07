@@ -279,7 +279,6 @@ fn main(){
 }
 
 fn run_tests(){
-  println!("{}","Running tests. No error means everything is OK.");
   let mut rng=OsRng::new().unwrap();
   {
     println!("{}","testing key encryption...");
@@ -298,6 +297,7 @@ fn run_tests(){
       &encrypt_data(&testvec,&pk_bytes),
       &sk_bytes).unwrap());
   }
+  println!("{}","Looks like everything is OK.");
 }
 
 fn print_help(this_command:&String){
