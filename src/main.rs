@@ -307,9 +307,8 @@ fn print_help(this_command:&String){
             \n       returns the fingerprint of your public key\
             \n     encrypt <fingerprint> <plaintext_file> <ciphertext_file>\
             \n       obvious\
-            \n     decrypt <plaintext_file> <plaintext_file>\
+            \n     decrypt <ciphertext_file> <plaintext_file>\
             \n       obvious\
             \n     test\
             \n       do a self-test",this_command);
-    
 }
