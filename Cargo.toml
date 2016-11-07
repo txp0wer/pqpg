@@ -1,0 +1,17 @@
+[package]
+name = "pqpg"
+version = "0.1.0"
+authors = ["txp0wer <bitmessage:BM-2cVEQBA71Nu4RGN7LdaMuWkYZ8AGxYHsCF>"]
+license = "GNU GPLv3"
+readme = "README"
+keywords = ["quantum", "post-quantum", "newhope", "cryptography", "encryption"]
+repository = "https://github.com/txp0wer/pqpg.git"
+description = """
+a little GnuPG-like command line tool for post-quantum cryptography
+"""
+
+[dependencies]
+sarkara = "0.5.1"
+rust-crypto = "0.2.36"
+rpassword = "0.3.0"
+rand = "0.3"

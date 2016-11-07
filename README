@@ -1,0 +1,44 @@
+PQPG: POST QUANTUM PRIVACY GUARD
+
+a little GnuPG-like command line tool for post-quantum cryptography
+
+License: GNU GPLv3 or later
+
+Requirements:
+  * rust-nightly (because of dependencies)
+  * a lot of rust libraries (see Cargo.toml)
+
+Compile/install:
+  git clone https://github.com/txp0wer/pqpg
+  cd pqpg
+  cargo run --release <subcommand> [args]
+  cargo install # if you decide you like it
+
+Usage:
+  pqpg keygen <name>
+    generates a key and asks for a passphrase
+    returns the fingerprint of your key
+  pqpg encrypt <fingerprint> <input_file> <output_file>
+  pqpg decrypt <input_file> <output_file>
+    asks for the passphrase, fails if the private key is missing
+  pqpg test
+    runs some self-tests
+
+Crypto: only encryption so far
+  * Public-Key encryption: "new hope" (through sarkara library; see module SealedBox)
+  * symmetric encryption: SCrypt (through rust-crypto; to protect the private key files)
+  * Hash: Blake2b (sarkara; for the PK fingerprints)
+
+To do:
+  * implement an address book (name->fingerprint)
+  * implement a key import/export feature
+  * implement an optional "ASCII armor"
+  * implement the usual key management features (change passphrase, delete keys, rename keys)
+  * document the file format
+  * refactor the builtin help function
+
+WARNING:
+  * this tool is not yet production ready, so don't trust it with any sensitive/important data
+  * I assume that the algorithms are really secure against quantum computers
+    and that their implementations have neither significant flaws nor backdoors
+  * the file formats may change in the future

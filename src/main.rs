@@ -1,0 +1,316 @@
+#![feature(try_from)]
+#[macro_use]
+
+extern crate bencode;
+extern crate crypto;
+extern crate rand;
+extern crate rpassword;
+extern crate rustc_serialize;
+extern crate sarkara;
+
+use crypto::scrypt::{scrypt,ScryptParams};
+use rand::os::OsRng;
+use rand::Rng;
+use rpassword::prompt_password_stderr;
+use rustc_serialize::hex::{FromHex,ToHex};
+use sarkara::aead::Ascon;
+use sarkara::hash::{ Blake2b, Hash, GenericHash };
+use sarkara::kex::{ KeyExchange, NewHope };
+use sarkara::sealedbox::SealedBox;
+use std::convert::TryFrom;
+use std::env;
+use std::fs::File;
+use std::io;
+use std::io::prelude::*;
+use std::ops::*;
+use std::path::PathBuf;
+
+
+const PK_EXT:&'static str=".pqp";
+const SK_EXT:&'static str=".pqs";
+const MAC_LENGTH:usize=64;
+const SALT_LENGTH:usize=MAC_LENGTH;
+const FPR_LENGTH:usize=32;
+
+fn xor8(a:&Vec<u8>,b:&Vec<u8>)->Option<Vec<u8>>{
+  if a.len()==b.len(){
+    let mut out:Vec<u8>=Vec::with_capacity(a.len());
+    for i in 0..a.len(){
+      let c=(a[..][i])^(b[..][i]);
+      out.push(c);
+    }
+    return Some(out);
+  } else {
+    return None;
+  }
+}
+
+fn setup_directory()->PathBuf{
+  let mut path=env::home_dir().unwrap();
+  path.push(".pqpg");
+  if !path.exists(){
+    assert!(std::fs::create_dir(&path).is_ok());
+  }
+  return path;
+}
+
+fn get_key(key_directory:&PathBuf, fpr:&Vec<u8>, ext:&str)->Option<Vec<u8>>{
+  let filename = fpr[..].to_hex();
+  let mut file_path = key_directory.clone();
+  file_path.push(filename+&String::from(ext));
+  let mut output:Vec<u8> = Vec::new();
+  match File::open(file_path){
+    Ok(f) => {
+      let mut f = f; // Seriously?
+      if f.read_to_end(&mut output).is_err(){
+        return None;
+      }
+    },
+    _ => return None
+  }
+  return Some(output);
+}
+
+fn put_key(key_directory:&PathBuf, key:&Vec<u8>, fpr:&Vec<u8>, ext:&str)->bool{
+  let mut file_path=key_directory.clone();
+  let filename=fpr[..].to_hex();
+  file_path.push(filename+&String::from(ext));
+  return File::create(file_path)
+    .unwrap()
+      .write(&key)
+        .is_ok();
+}
+
+fn get_new_passphrase()->Vec<u8>{
+  let (qa,qb)=("New passphrase: ","again: ");
+  let mut a=prompt_password_stderr(qa).unwrap();
+  let mut b=prompt_password_stderr(qb).unwrap();
+  while a!=b {
+    a=prompt_password_stderr("Passphrases don't match.\nNew nassphrase: ").unwrap();
+    b=prompt_password_stderr(qb).unwrap();
+  }
+  return a.into_bytes();
+}
+
+fn encrypt_key(key:&Vec<u8>)->Vec<u8>{
+  let passphrase:Vec<u8>=get_new_passphrase();
+  let mut rng=OsRng::new().unwrap();
+  let random32=rng.next_u32();
+  let (log_n,r,p)=(
+    16u8-((random32&7) as u8),
+    8u32+((random32>>3u32)&15u32),
+    1u32);
+  /* randomizing the SCrypt parameters a little should make a custom hardware attack more expensive */
+  let params=ScryptParams::new(log_n,r,p);
+  let mut salt=[0u8;SALT_LENGTH];
+  rng.fill_bytes(&mut salt);
+  let mut scrypt_pad=key.clone();
+  scrypt(&passphrase[..],&salt[..],&params,&mut scrypt_pad[..]);
+  let mut output:Vec<u8>=Vec::with_capacity(9+MAC_LENGTH+key.len());
+  output.extend_from_slice(&[
+    log_n,
+    ((r&(255u32<<24))>>24) as u8,
+    ((r&(255u32<<16))>>16) as u8,
+    ((r&(255u32<<8))>>8) as u8,
+    (r&(255u32)) as u8,
+    ((p&(255u32<<24))>>24) as u8,
+    ((p&(255u32<<16))>>16) as u8,
+    ((p&(255u32<<8))>>8) as u8,
+    (p&(255u32)) as u8
+  ][..]);
+  output.extend_from_slice(&salt[..]);
+  {
+    let mac=xor8(
+      &Blake2b::default()
+        .with_size(MAC_LENGTH)
+          .hash::<Vec<u8>>(&key),
+      &Blake2b::default()
+        .with_size(MAC_LENGTH)
+          .hash::<Vec<u8>>(&scrypt_pad)
+    ).unwrap();
+    output.extend_from_slice(&mac[..]);
+  }
+  {
+    let encrypted_key=xor8(&scrypt_pad,&key).unwrap();
+    output.extend_from_slice(&encrypted_key[..]);
+  }
+  return output;
+}
+
+fn decrypt_key(key:&Vec<u8>)->Vec<u8>{
+  let mut passphrase:Vec<u8>=
+      prompt_password_stderr("Passphrase: ")
+        .unwrap()
+          .into_bytes();
+  loop {
+    let log_n=key[0];
+    let r:u32=((key[1] as u32)<<24u32)|
+      ((key[2] as u32)<<16u32)|
+      ((key[3] as u32)<<8u32)|
+      ((key[4] as u32));
+    let p:u32=((key[5] as u32)<<24u32)|
+      ((key[6] as u32)<<16u32)|
+      ((key[7] as u32)<<8u32)|
+      ((key[8] as u32));
+    let salt:Vec<u8>=Vec::from(&key[9..9+MAC_LENGTH]);
+    let mac:Vec<u8>=Vec::from(&key[9+MAC_LENGTH..9+2*MAC_LENGTH]);
+    let encrypted_key:Vec<u8>=Vec::from(&key[9+2*MAC_LENGTH..]);
+    let params=ScryptParams::new(log_n,r,p);
+    let mut scrypt_pad=encrypted_key.clone();
+    scrypt(&passphrase[..],&salt[..],&params,&mut scrypt_pad[..]);
+    let decrypted_key=xor8(&scrypt_pad,&encrypted_key).unwrap();
+    if mac==xor8(
+        &Blake2b::default()
+          .with_size(MAC_LENGTH)
+            .hash::<Vec<u8>>(&decrypted_key),
+        &Blake2b::default()
+          .with_size(MAC_LENGTH)
+            .hash::<Vec<u8>>(&scrypt_pad)
+      ).unwrap(){
+      return decrypted_key;
+      } else {
+        passphrase=prompt_password_stderr("Wrong passphrase.\n Try again: ")
+        .unwrap()
+          .into_bytes();
+      }
+  }
+}
+
+fn keygen(name:&String)->Vec<u8>{ // name will be used in the next release
+  let (sk, pk) = NewHope::keygen();
+  let sk_bytes:Vec<u8> = sk.into();
+  let pk_bytes:Vec<u8> = pk.into();
+  let fpr:Vec<u8>=
+    Blake2b::default()
+      .with_size(FPR_LENGTH)
+        .hash::<Vec<u8>>(&pk_bytes);
+  let dir=setup_directory();
+  put_key(&dir,&pk_bytes,&fpr,PK_EXT);
+  let ek_bytes=encrypt_key(&sk_bytes);
+  put_key(&dir,&ek_bytes,&fpr,SK_EXT);
+  return fpr;
+}
+
+fn decrypt_data(ciphertext:&Vec<u8>,sk_bytes:&Vec<u8>)->Option<Vec<u8>>{
+  let sk:<NewHope as KeyExchange>::PrivateKey =
+    <NewHope as KeyExchange>::
+      PrivateKey::
+        try_from(&sk_bytes[..])
+          .unwrap();
+  let plaintext=Ascon::open::<NewHope>(&sk,&ciphertext);
+  return match plaintext{
+    Ok(val)=> Some(val),
+    Err(_)=> None
+  }
+}
+
+fn encrypt_data(plaintext:&Vec<u8>,pk_bytes:&Vec<u8>)->Vec<u8>{
+  let pk:<NewHope as KeyExchange>::PublicKey =
+    <NewHope as KeyExchange>::
+      PublicKey::
+        try_from(&pk_bytes[..])
+          .unwrap();
+  return Ascon::seal::<NewHope>(&pk,&plaintext);
+}
+
+fn encrypt_file(fpr:&String, input:Option<&String>, output:Option<&String>){
+  let hash:Vec<u8>=fpr.index((..)).from_hex().unwrap();
+  let mut plaintext:Vec<u8>=Vec::new();
+  match input{
+    None => io::stdin().read_to_end(&mut plaintext).unwrap(),
+    Some(name) => File::open(name).unwrap().read_to_end(&mut plaintext).unwrap()
+  };
+  let pk_bytes=get_key(&setup_directory(),&hash,PK_EXT).unwrap();
+  let mut ciphertext=hash.clone();
+  ciphertext.extend_from_slice(&encrypt_data(&plaintext,&pk_bytes)[..]);
+  match output{
+    None => assert_eq!(io::stdout().write(&ciphertext).unwrap(),ciphertext.len()),
+    Some(name) => assert_eq!(File::create(name).unwrap().write(&ciphertext).unwrap(),ciphertext.len())
+  }
+}
+
+fn decrypt_file(input:Option<&String>, output:Option<&String>){
+  let mut ciphertext:Vec<u8>=Vec::new();
+  match input{
+    None => io::stdin().read_to_end(&mut ciphertext).unwrap(),
+    Some(name) => File::open(name).unwrap().read_to_end(&mut ciphertext).unwrap()
+  };
+  let hash=Vec::from(&ciphertext[0..FPR_LENGTH]);
+  let ciphertext=Vec::from(&ciphertext[FPR_LENGTH..]);
+  let sk_bytes=decrypt_key(&get_key(&setup_directory(),&hash,SK_EXT).unwrap());
+  let plaintext=decrypt_data(&ciphertext,&sk_bytes).unwrap();
+  match output{
+    None => assert_eq!(io::stdout().write(&plaintext).unwrap(),plaintext.len()),
+    Some(name) => assert_eq!(File::create(name).unwrap().write(&plaintext).unwrap(),plaintext.len())
+  }
+}
+
+fn main(){
+  let args:Vec<String>=env::args().collect();
+  match args.len(){
+    0 => print_help(&args[0]),
+    1 => print_help(&args[0]),
+    _ => match &args[1][..]{
+      "test" => run_tests(),
+      "keygen" => println!("Done. Your public key file is in ~/.pqpg/{}{}",keygen(&args[2]).to_hex(),PK_EXT),
+      "encrypt" => encrypt_file(
+        &args[2],
+        match args.len(){
+          3 => None,
+          _ => Some(&args[3])
+        },
+        match args.len(){
+          4 => None,
+          _ => Some(&args[4])
+        }
+      ),
+      "decrypt" => decrypt_file(
+        match args.len(){
+          2 => None,
+          _ => Some(&args[2])
+        },
+        match args.len(){
+          3 => None,
+          _ => Some(&args[3])
+        },
+      ),
+      _ => print_help(&args[0])
+    }
+  }
+}
+
+fn run_tests(){
+  println!("{}","Running tests. No error means everything is OK.");
+  let mut rng=OsRng::new().unwrap();
+  {
+    println!("{}","testing key encryption...");
+    let mut testvec:Vec<u8>=Vec::from(&[0;1<<16][..]);
+    rng.fill_bytes(&mut testvec[..]);
+    assert_eq!(testvec,decrypt_key(&encrypt_key(&testvec)));
+  }
+  {
+    println!("{}","testing data encryption...");
+    let (sk, pk) = NewHope::keygen();
+    let sk_bytes:Vec<u8> = sk.into();
+    let pk_bytes:Vec<u8> = pk.into();
+    let mut testvec:Vec<u8>=Vec::from(&[0;1<<16][..]);
+    rng.fill_bytes(&mut testvec[..]);
+    assert_eq!(testvec,decrypt_data(
+      &encrypt_data(&testvec,&pk_bytes),
+      &sk_bytes).unwrap());
+  }
+}
+
+fn print_help(this_command:&String){
+  println!("Usage: {} <subcommand> [args]\
+            \n  subcommands:\
+            \n     keygen <name>\
+            \n       returns the fingerprint of your public key\
+            \n     encrypt <fingerprint> <plaintext_file> <ciphertext_file>\
+            \n       obvious\
+            \n     decrypt <plaintext_file> <plaintext_file>\
+            \n       obvious\
+            \n     test\
+            \n       do a self-test",this_command);
+    
+}
