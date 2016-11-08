@@ -1,0 +1,26 @@
+// files used by PQPG version 0.1.0
+
+PrivateKeyFile{
+  // extension ".pqs"
+  // location ~/.pqpg
+  // name=blake2b32(public_key)
+  scrypt_log_n:u8,
+  scrypt_r:u32b, // big endian [u8;4]
+  scrypt_p:u32b,
+  scrypt_salt:[u8;64],
+  hmac:[u8;64], // foldr(xor,map(blake2b.with_size(64),[scrypt_keystream,private_key]))
+  encrypted_private_key:[u8] // xor(private_key,scrypt_keystream)
+}
+
+PublicKeyFile{
+  // extension ".pqp"
+  // location ~/.pqpg
+  // name=blake2b32(public_key)
+  public_key:[u8]
+}
+
+EncryptedDataFile{
+  // extension ".pqe"
+  fingerprint:[u8:64], // hash(public_key)
+  sealed_box:[u8]
+}
