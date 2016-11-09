@@ -96,9 +96,19 @@ fn encrypt_key(key:&Vec<u8>)->Vec<u8>{
   let mut rng=OsRng::new().unwrap();
   let random32=rng.next_u32();
   let (log_n,r,p)=(
-    16u8-((random32&7) as u8),
-    8u32+((random32>>3u32)&15u32),
-    1u32);
+    match env::var("SCRYPT_LOG_N"){
+      Ok(v) => v.parse::<u8>().unwrap(),
+      _ => 16u8-((random32&7) as u8) // in range [9,16]
+    },
+    match env::var("SCRYPT_R"){
+      Ok(v) => v.parse::<u32>().unwrap(),
+      _ => 8u32+((random32>>3u32)&15u32) // in range [8,23]
+    },
+    match env::var("SCRYPT_P"){
+      Ok(v) => v.parse::<u32>().unwrap(),
+      _ => 1
+    }
+  );
   /* randomizing the SCrypt parameters a little should make a custom hardware attack more expensive */
   let params=ScryptParams::new(log_n,r,p);
   let mut salt=[0u8;SALT_LENGTH];
