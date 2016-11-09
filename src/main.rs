@@ -282,6 +282,7 @@ fn main(){
           _ => Some(&args[3])
         },
       ),
+      "chpass" => change_passphrase(&get_fingerprint(&args[2]).unwrap()),
       _ => print_help(&args[0])
     }
   }
@@ -317,7 +318,9 @@ fn print_help(this_command:&String){
             \n     encrypt <fingerprint> <plaintext_file> <ciphertext_file>\
             \n       obvious\
             \n     decrypt <ciphertext_file> <plaintext_file>\
-            \n       obvious\
+            \n       obvious (fingerprint is automatically detected)\
+            \n     chpass <fingerprint>
+            \n       change the passphrase (of a private key)
             \n     test\
             \n       do a self-test",this_command);
 }
@@ -325,4 +328,14 @@ fn print_help(this_command:&String){
 fn get_fingerprint(key_id:&String)->Option<Vec<u8>>{
   // this will be extended to look up partial fingerprints, names and contact addresses in the db
   return Some(key_id.index((..)).from_hex().unwrap());
+}
+
+fn change_passphrase(fingerprint:&Vec<u8>){
+  let dir=setup_directory();
+  let old_sk_bytes=get_key(&dir,&fingerprint,SK_EXT).unwrap();
+  let sk_bytes=decrypt_key(&old_sk_bytes);
+  let new_sk_bytes=encrypt_key(&sk_bytes);
+  assert_eq!(new_sk_bytes.len(),old_sk_bytes.len());
+  // let's not overwrite the key file if encrypt_key() crashes
+  put_key(&dir,&new_sk_bytes,&fingerprint,SK_EXT);
 }

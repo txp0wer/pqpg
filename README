@@ -21,6 +21,8 @@ Usage:
   pqpg encrypt <fingerprint> <input_file> <output_file>
   pqpg decrypt <input_file> <output_file>
     asks for the passphrase, fails if the private key is missing
+  pqpg chpass <fingerprint>
+    changes the passphrase
   pqpg test
     runs some self-tests
 
