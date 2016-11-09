@@ -222,15 +222,14 @@ fn encrypt_data(plaintext:&Vec<u8>,pk_bytes:&Vec<u8>)->Vec<u8>{
   return Ascon::seal::<NewHope>(&pk,&plaintext);
 }
 
-fn encrypt_file(fpr:&String, input:Option<&String>, output:Option<&String>){
-  let hash:Vec<u8>=fpr.index((..)).from_hex().unwrap();
+fn encrypt_file(fpr:&Vec<u8>, input:Option<&String>, output:Option<&String>){
   let mut plaintext:Vec<u8>=Vec::new();
   match input{
     None => io::stdin().read_to_end(&mut plaintext).unwrap(),
     Some(name) => File::open(name).unwrap().read_to_end(&mut plaintext).unwrap()
   };
-  let pk_bytes=get_key(&setup_directory(),&hash,PK_EXT).unwrap();
-  let mut ciphertext=hash.clone();
+  let pk_bytes=get_key(&setup_directory(),fpr,PK_EXT).unwrap();
+  let mut ciphertext=fpr.clone();
   ciphertext.extend_from_slice(&encrypt_data(&plaintext,&pk_bytes)[..]);
   match output{
     None => assert_eq!(io::stdout().write(&ciphertext).unwrap(),ciphertext.len()),
@@ -263,7 +262,7 @@ fn main(){
       "test" => run_tests(),
       "keygen" => println!("Done. Your public key file is in ~/.pqpg/{}{}",keygen(&args[2]).to_hex(),PK_EXT),
       "encrypt" => encrypt_file(
-        &args[2],
+        &get_fingerprint(&args[2]).unwrap(),
         match args.len(){
           3 => None,
           _ => Some(&args[3])
@@ -321,4 +320,9 @@ fn print_help(this_command:&String){
             \n       obvious\
             \n     test\
             \n       do a self-test",this_command);
+}
+
+fn get_fingerprint(key_id:&String)->Option<Vec<u8>>{
+  // this will be extended to look up partial fingerprints, names and contact addresses in the db
+  return Some(key_id.index((..)).from_hex().unwrap());
 }
