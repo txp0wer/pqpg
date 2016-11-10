@@ -15,4 +15,10 @@ rand = "0.3"
 rpassword = "0.3.0"
 rust-crypto = "0.2.36"
 rustc-serialize = "0.3.19"
-sarkara = "0.5.1"
+
+[dependencies.sarkara]
+version = "0.5.1"
+default-features = false
+
+[features]
+x86simd = [ "sarkara/simd" ]

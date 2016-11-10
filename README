@@ -11,8 +11,9 @@ Requirements:
 Compile/install:
   git clone https://github.com/txp0wer/pqpg
   cd pqpg
-  cargo run --release <subcommand> [args]
-  cargo install # if you decide you like it
+  cargo run --release [--features x86simd] <subcommand> [args]
+  cargo install [--features x86simd] # if you decide you like it
+  # "--features x86simd" only works for x86 CPUs
 
 Usage:
   pqpg keygen <name>
