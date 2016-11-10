@@ -311,18 +311,20 @@ fn run_tests(){
 }
 
 fn print_help(this_command:&String){
-  println!("Usage: {} <subcommand> [args]\
-            \n  subcommands:\
-            \n     keygen <name>\
-            \n       returns the fingerprint of your public key\
-            \n     encrypt <fingerprint> <plaintext_file> <ciphertext_file>\
-            \n       obvious\
-            \n     decrypt <ciphertext_file> <plaintext_file>\
-            \n       obvious (fingerprint is automatically detected)\
-            \n     chpass <fingerprint>
-            \n       change the passphrase (of a private key)
-            \n     test\
-            \n       do a self-test",this_command);
+  println!("\
+Usage: {} <subcommand> [args]
+  subcommands:
+    keygen <name>
+      returns the fingerprint of your public key
+    encrypt <fingerprint> <plaintext_file> <ciphertext_file>
+      obvious
+    decrypt <ciphertext_file> <plaintext_file>
+      obvious (fingerprint is automatically detected)
+    chpass <fingerprint>
+      change the passphrase (of a private key)
+    test
+      do a self-test\
+          ",this_command);
 }
 
 fn get_fingerprint(key_id:&String)->Option<Vec<u8>>{
