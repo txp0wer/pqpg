@@ -4,6 +4,7 @@
 extern crate crypto;
 extern crate rand;
 extern crate rpassword;
+extern crate rusqlite;
 extern crate rustc_serialize;
 extern crate sarkara;
 
@@ -11,6 +12,7 @@ use crypto::scrypt::{scrypt,ScryptParams};
 use rand::os::OsRng;
 use rand::Rng;
 use rpassword::prompt_password_stderr;
+use rusqlite::Connection;
 use rustc_serialize::hex::{FromHex,ToHex};
 use sarkara::aead::Ascon;
 use sarkara::hash::{ Blake2b, Hash, GenericHash };
@@ -23,7 +25,6 @@ use std::io;
 use std::io::prelude::*;
 use std::ops::*;
 use std::path::PathBuf;
-
 
 const PK_EXT:&'static str=".pqp";
 const SK_EXT:&'static str=".pqs";
@@ -185,7 +186,7 @@ fn decrypt_key(key:&Vec<u8>)->Vec<u8>{
   }
 }
 
-fn keygen(name:&String)->Vec<u8>{ // name will be used in the next release
+fn keygen(name:&String)->Vec<u8>{
   let (sk, pk) = NewHope::keygen();
   let sk_bytes:Vec<u8> = sk.into();
   let pk_bytes:Vec<u8> = pk.into();
@@ -197,6 +198,11 @@ fn keygen(name:&String)->Vec<u8>{ // name will be used in the next release
   put_key(&dir,&pk_bytes,&fpr,PK_EXT);
   let ek_bytes=encrypt_key(&sk_bytes);
   put_key(&dir,&ek_bytes,&fpr,SK_EXT);
+  let db=setup_db();
+  db.execute("
+    insert into contacts
+    values($1,$2,\"\",\"\",3,3,\"\");
+  ",&[&fpr,name]).expect("writing to address book failed");
   return fpr;
 }
 
@@ -332,9 +338,20 @@ Usage: {} <subcommand> [args]
           ",this_command);
 }
 
-fn get_fingerprint(key_id:&String)->Option<Vec<u8>>{
-  // this will be extended to look up partial fingerprints, names and contact addresses in the db
-  return Some(key_id.index((..)).from_hex().unwrap());
+fn get_fingerprint(search:&String)->Option<Vec<u8>>{
+  let db=setup_db();
+  let mut stmt = db.prepare("\
+    select fingerprint
+    from contacts
+    where upper(name) like upper($1)
+    or upper(address) like upper($1)
+    or hex(fingerprint) like upper($1);
+  ").expect("preparing SQL statement failed");
+  let mut hits=stmt.query(&[search]).unwrap();
+  return match hits.next(){
+    Some(v) => Some(v.unwrap().get(0)),
+    _ => None
+  };
 }
 
 fn change_passphrase(fingerprint:&Vec<u8>){
@@ -346,4 +363,23 @@ fn change_passphrase(fingerprint:&Vec<u8>){
   assert_eq!(new_sk_bytes.len(),old_sk_bytes.len());
   // let's not overwrite the key file if encrypt_key() crashes
   put_key(&dir,&new_sk_bytes,&fingerprint,SK_EXT);
+}
+
+fn setup_db()->Connection{
+  let mut dir=setup_directory();
+  dir.push("contacts.sqlite");
+  let out=Connection::open(&dir)
+    .expect("opening database failed");
+  out.execute("
+    create table if not exists
+      contacts(
+        fingerprint blob(32),
+        name text(256),
+        protocol text(256),
+        address text(1024),
+        trust integer(-1,3),
+        verified integer(-1,3),
+        comment text(1024)
+      );",&[]).expect("database is damaged");
+  return out;
 }
