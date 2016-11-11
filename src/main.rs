@@ -228,7 +228,8 @@ fn encrypt_file(fpr:&Vec<u8>, input:Option<&String>, output:Option<&String>){
     None => io::stdin().read_to_end(&mut plaintext).unwrap(),
     Some(name) => File::open(name).unwrap().read_to_end(&mut plaintext).unwrap()
   };
-  let pk_bytes=get_key(&setup_directory(),fpr,PK_EXT).unwrap();
+  let pk_bytes=get_key(&setup_directory(),fpr,PK_EXT)
+    .expect("public key not found");
   let mut ciphertext=fpr.clone();
   ciphertext.extend_from_slice(&encrypt_data(&plaintext,&pk_bytes)[..]);
   match output{
@@ -245,7 +246,7 @@ fn decrypt_file(input:Option<&String>, output:Option<&String>){
   };
   let hash=Vec::from(&ciphertext[0..FPR_LENGTH]);
   let ciphertext=Vec::from(&ciphertext[FPR_LENGTH..]);
-  let sk_bytes=decrypt_key(&get_key(&setup_directory(),&hash,SK_EXT).unwrap());
+  let sk_bytes=decrypt_key(&get_key(&setup_directory(),&hash,SK_EXT).expect("private key not found"));
   let plaintext=decrypt_data(&ciphertext,&sk_bytes).unwrap();
   match output{
     None => assert_eq!(io::stdout().write(&plaintext).unwrap(),plaintext.len()),
@@ -262,7 +263,8 @@ fn main(){
       "test" => run_tests(),
       "keygen" => println!("Done. Your public key file is in ~/.pqpg/{}{}",keygen(&args[2]).to_hex(),PK_EXT),
       "encrypt" => encrypt_file(
-        &get_fingerprint(&args[2]).unwrap(),
+        &get_fingerprint(&args[2])
+          .expect("no matching fingerprint found"),
         match args.len(){
           3 => None,
           _ => Some(&args[3])
@@ -282,7 +284,10 @@ fn main(){
           _ => Some(&args[3])
         },
       ),
-      "chpass" => change_passphrase(&get_fingerprint(&args[2]).unwrap()),
+      "chpass" => change_passphrase(
+        &get_fingerprint(&args[2])
+          .expect("no matching fingerprint found")
+      ),
       _ => print_help(&args[0])
     }
   }
@@ -334,7 +339,8 @@ fn get_fingerprint(key_id:&String)->Option<Vec<u8>>{
 
 fn change_passphrase(fingerprint:&Vec<u8>){
   let dir=setup_directory();
-  let old_sk_bytes=get_key(&dir,&fingerprint,SK_EXT).unwrap();
+  let old_sk_bytes=get_key(&dir,&fingerprint,SK_EXT)
+    .expect("private key not found");
   let sk_bytes=decrypt_key(&old_sk_bytes);
   let new_sk_bytes=encrypt_key(&sk_bytes);
   assert_eq!(new_sk_bytes.len(),old_sk_bytes.len());
