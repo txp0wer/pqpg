@@ -13,7 +13,7 @@ Compile/install:
   cd pqpg
   cargo run --release [--features x86simd] <subcommand> [args]
   cargo install [--features x86simd] # if you decide you like it
-  # "--features x86simd" only works for x86 CPUs
+  # "--features x86simd" may increase performance, but requires an x86 CPU
 
 Usage:
   pqpg keygen <name>
@@ -28,17 +28,19 @@ Usage:
     runs some self-tests
 
 Crypto: only encryption so far
-  * Public-Key encryption: "new hope" (through sarkara library; see module SealedBox)
+  * Public-Key encryption: "new hope" (Ring-LWE; 14592 bits; through sarkara library; see module SealedBox)
   * symmetric encryption: SCrypt (through rust-crypto; to protect the private key files)
   * Hash: Blake2b (sarkara; for the PK fingerprints)
 
 To do:
-  * implement an address book (name->fingerprint)
+  * implement an address book (name->fingerprint) (WIP)
   * implement a key import/export feature
   * implement an optional "ASCII armor"
-  * implement the usual key management features (change passphrase, delete keys, rename keys)
-  * document the file format
+  * implement the usual key management features (delete keys, rename keys)
   * refactor the builtin help function
+
+Known bugs:
+  * file size is limited by available RAM (blame sarkara::SealedBox for that)
 
 WARNING:
   * this tool is not yet production ready, so don't trust it with any sensitive/important data
