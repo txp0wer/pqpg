@@ -13,6 +13,7 @@ a little GnuPG-like command line tool for post-quantum cryptography
 [dependencies]
 rand = "0.3"
 rpassword = "0.3.0"
+rusqlite = "0.7.3"
 rust-crypto = "0.2.36"
 rustc-serialize = "0.3.19"
 
