@@ -333,12 +333,14 @@ Usage: {} <subcommand> [args]
   subcommands:
     keygen <name>
       returns the fingerprint of your public key
-    encrypt <fingerprint> <plaintext_file> <ciphertext_file>
+    encrypt <name_or_fingerprint> <plaintext_file> <ciphertext_file>
       obvious
     decrypt <ciphertext_file> <plaintext_file>
       obvious (fingerprint is automatically detected)
-    chpass <fingerprint>
+    chpass <name_or_fingerprint>
       change the passphrase (of a private key)
+    list [name_or_fingerprint]
+      list all or search known keys
     test
       do a self-test\
           ",this_command);

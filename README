@@ -19,11 +19,13 @@ Usage:
   pqpg keygen <name>
     generates a key and asks for a passphrase
     returns the fingerprint of your key
-  pqpg encrypt <fingerprint> <input_file> <output_file>
+  pqpg encrypt <name_or_fingerprint> <input_file> <output_file>
   pqpg decrypt <input_file> <output_file>
     asks for the passphrase, fails if the private key is missing
-  pqpg chpass <fingerprint>
+  pqpg chpass <name_or_fingerprint>
     changes the passphrase
+  pqpg list [name_or_fingerprint]
+    list all or search known keys
   pqpg test
     runs some self-tests
 
