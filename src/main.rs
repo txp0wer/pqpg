@@ -294,6 +294,12 @@ fn main(){
         &get_fingerprint(&args[2])
           .expect("no matching fingerprint found")
       ),
+      "list" => list_keys(
+        match args.len(){
+          2 => None,
+          _ => Some(&args[2])
+        }
+      ),
       _ => print_help(&args[0])
     }
   }
@@ -382,4 +388,43 @@ fn setup_db()->Connection{
         comment text(1024)
       );",&[]).expect("database is damaged");
   return out;
+}
+
+fn list_keys(search:Option<&String>){
+  let db=setup_db();
+  let mut stmt=db.prepare("
+    select
+      fingerprint,
+      hex(fingerprint),
+      name,
+      protocol,
+      address,
+      trust,
+      verified,
+      comment
+    from
+      contacts
+    where
+      upper(name) like upper($1)
+      or upper(address) like upper($1)
+      or hex(fingerprint) like upper($1);
+    ").unwrap();
+  let mut hits=stmt
+    .query(&[search.unwrap_or(&String::from("%"))])
+       .unwrap();
+  let dir=setup_directory();
+  while let Some(result_hit) = hits.next(){
+    let hit=result_hit.unwrap();
+    let (a,b,c,d,e,f,g,h):(
+      &str,String,String,String,String,i64,i64,String
+    )=(
+      match get_key(&dir,&hit.get(0),SK_EXT){
+        Some(_) => "S",
+        None => "P"
+      },
+      hit.get(1),hit.get(2),hit.get(3),
+      hit.get(4),hit.get(5),hit.get(6),hit.get(7)
+    );
+    println!("{}\t{}\t{}\t<{}:{}>\t{}/{}\t{}",a,b,c,d,e,f,g,h);
+  }
 }
