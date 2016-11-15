@@ -268,6 +268,20 @@ fn main(){
     _ => match &args[1][..]{
       "test" => run_tests(),
       "keygen" => println!("Done. Your public key file is in ~/.pqpg/{}{}",keygen(&args[2]).to_hex(),PK_EXT),
+      "import" => println!(
+        "Done. Your public key file is in ~/.pqpg/{}{}",
+        import_key(
+          match &args[2][..]{
+            "-" => None,
+            _ => Some(&args[2])
+          },
+          &args[3],
+          match args.len(){
+            4 => None,
+            _ => Some(&args[4])
+          }
+        ).to_hex(),
+        PK_EXT),
       "encrypt" => encrypt_file(
         &get_fingerprint(&args[2])
           .expect("no matching fingerprint found"),
@@ -333,6 +347,8 @@ Usage: {} <subcommand> [args]
   subcommands:
     keygen <name>
       returns the fingerprint of your public key
+    import <public_key_file> <name> [address],
+      adds a public key to your database
     encrypt <name_or_fingerprint> <plaintext_file> <ciphertext_file>
       obvious
     decrypt <ciphertext_file> <plaintext_file>
@@ -429,4 +445,23 @@ fn list_keys(search:Option<&String>){
     );
     println!("{}\t{}\t{}\t<{}:{}>\t{}/{}\t{}",a,b,c,d,e,f,g,h);
   }
+}
+
+fn import_key(input:Option<&String>,name:&String,addr:Option<&String>)->Vec<u8>{
+  let mut pk_bytes:Vec<u8>=Vec::new();
+  match input{
+    None => io::stdin().read_to_end(&mut pk_bytes).unwrap(),
+    Some(file_name) => File::open(file_name).unwrap().read_to_end(&mut pk_bytes).unwrap()
+  };
+  let fpr:Vec<u8>=
+    Blake2b::default()
+      .with_size(FPR_LENGTH)
+        .hash::<Vec<u8>>(&pk_bytes);
+  put_key(&setup_directory(),&pk_bytes,&fpr,PK_EXT);
+  let db=setup_db();
+  db.execute("
+    insert into contacts
+    values($1,$2,\"\",$3,0,0,\"\");
+  ",&[&fpr,name,addr.unwrap_or(&String::new())]).expect("writing to address book failed");
+  return fpr;
 }

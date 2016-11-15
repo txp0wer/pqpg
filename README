@@ -19,6 +19,8 @@ Usage:
   pqpg keygen <name>
     generates a key and asks for a passphrase
     returns the fingerprint of your key
+  import <public_key_file> <name> [address],
+      adds a public key to your database
   pqpg encrypt <name_or_fingerprint> <input_file> <output_file>
   pqpg decrypt <input_file> <output_file>
     asks for the passphrase, fails if the private key is missing
