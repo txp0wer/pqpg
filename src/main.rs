@@ -282,6 +282,13 @@ fn main(){
           }
         ).to_hex(),
         PK_EXT),
+      "export" => export_key(
+        &get_fingerprint(&args[2]).expect("no matching fingerprint found"),
+        match args.len(){
+          3 => None,
+          _ => Some(&args[3])
+        }
+      ),
       "encrypt" => encrypt_file(
         &get_fingerprint(&args[2])
           .expect("no matching fingerprint found"),
@@ -349,6 +356,8 @@ Usage: {} <subcommand> [args]
       returns the fingerprint of your public key
     import <public_key_file> <name> [address],
       adds a public key to your database
+    export <name_or_fingerprint> [public_key_file]
+      extracts a public key from your database and writes it to stdout or a specified file
     encrypt <name_or_fingerprint> <plaintext_file> <ciphertext_file>
       obvious
     decrypt <ciphertext_file> <plaintext_file>
@@ -464,4 +473,12 @@ fn import_key(input:Option<&String>,name:&String,addr:Option<&String>)->Vec<u8>{
     values($1,$2,\"\",$3,0,0,\"\");
   ",&[&fpr,name,addr.unwrap_or(&String::new())]).expect("writing to address book failed");
   return fpr;
+}
+
+fn export_key(fpr:&Vec<u8>,output:Option<&String>){
+  let pk_bytes=get_key(&setup_directory(),&fpr,PK_EXT).expect("public key not found");
+  match output{
+    None => assert_eq!(io::stdout().write(&pk_bytes).unwrap(),pk_bytes.len()),
+    Some(name) => assert_eq!(File::create(name).unwrap().write(&pk_bytes).unwrap(),pk_bytes.len())
+  }
 }

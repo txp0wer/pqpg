@@ -21,6 +21,8 @@ Usage:
     returns the fingerprint of your key
   import <public_key_file> <name> [address],
       adds a public key to your database
+  export <name_or_fingerprint> [public_key_file]
+    extracts a public key from your database and writes it to stdout or a specified file
   pqpg encrypt <name_or_fingerprint> <input_file> <output_file>
   pqpg decrypt <input_file> <output_file>
     asks for the passphrase, fails if the private key is missing
