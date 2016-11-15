@@ -355,7 +355,7 @@ Usage: {} <subcommand> [args]
     keygen <name>
       returns the fingerprint of your public key
     import <public_key_file> <name> [address],
-      adds a public key to your database
+      adds a public key file to your database
     export <name_or_fingerprint> [public_key_file]
       extracts a public key from your database and writes it to stdout or a specified file
     encrypt <name_or_fingerprint> <plaintext_file> <ciphertext_file>
