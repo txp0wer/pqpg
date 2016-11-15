@@ -40,10 +40,10 @@ Crypto: only encryption so far
 
 To do:
   * implement an address book (name->fingerprint) (WIP)
-  * implement a key import/export feature
   * implement an optional "ASCII armor"
   * implement the usual key management features (delete keys, rename keys)
   * refactor the builtin help function
+  * migrate key material to the database
 
 Known bugs:
   * file size is limited by available RAM (blame sarkara::SealedBox for that)
