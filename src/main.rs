@@ -2,6 +2,7 @@
 #[macro_use]
 
 extern crate crypto;
+extern crate gcrypt;
 extern crate rand;
 extern crate rpassword;
 extern crate rusqlite;
@@ -9,6 +10,7 @@ extern crate rustc_serialize;
 extern crate sarkara;
 
 use crypto::scrypt::{scrypt,ScryptParams};
+use gcrypt::Buffer;
 use rand::os::OsRng;
 use rand::Rng;
 use rpassword::prompt_password_stderr;
@@ -32,16 +34,35 @@ const MAC_LENGTH:usize=64;
 const SALT_LENGTH:usize=MAC_LENGTH;
 const FPR_LENGTH:usize=32;
 
-fn xor8(a:&Vec<u8>,b:&Vec<u8>)->Option<Vec<u8>>{
+fn xor8(a:&[u8],b:&[u8])->Option<Buffer>{
   if a.len()==b.len(){
-    let mut out:Vec<u8>=Vec::with_capacity(a.len());
-    for i in 0..a.len(){
-      let c=(a[..][i])^(b[..][i]);
-      out.push(c);
+    let mut out:Buffer=secmem(a.len());
+    let mut i:usize=0;
+    while i<a.len(){
+      out[i]=(a[i])^(b[i]);
+      i+=1;
     }
     return Some(out);
   } else {
     return None;
+  }
+}
+
+fn secmem(length:usize)->Buffer{
+  return Buffer::new_secure(length).expect("allocating secure memory failed");
+}
+
+fn memcpy(src:&[u8],dest:&mut[u8])->Result<(),()>{
+  if src.len()>dest.len(){
+    return Err(());
+  } else {
+    let mut i:usize=0;
+    let l:usize=src.len();
+    while i<l{
+      dest[i]=src[i];
+      i+=1;
+    }
+    return Ok(());
   }
 }
 
@@ -71,7 +92,7 @@ fn get_key(key_directory:&PathBuf, fpr:&Vec<u8>, ext:&str)->Option<Vec<u8>>{
   return Some(output);
 }
 
-fn put_key(key_directory:&PathBuf, key:&Vec<u8>, fpr:&Vec<u8>, ext:&str)->bool{
+fn put_key(key_directory:&PathBuf, key:&[u8], fpr:&[u8], ext:&str)->bool{
   let mut file_path=key_directory.clone();
   let filename=fpr[..].to_hex();
   file_path.push(filename+&String::from(ext));
@@ -92,7 +113,7 @@ fn get_new_passphrase()->Vec<u8>{
   return a.into_bytes();
 }
 
-fn encrypt_key(key:&Vec<u8>)->Vec<u8>{
+fn encrypt_key(key:&[u8])->Buffer{
   let passphrase:Vec<u8>=get_new_passphrase();
   let mut rng=OsRng::new().unwrap();
   let random32=rng.next_u32();
@@ -112,12 +133,12 @@ fn encrypt_key(key:&Vec<u8>)->Vec<u8>{
   );
   /* randomizing the SCrypt parameters a little should make a custom hardware attack more expensive */
   let params=ScryptParams::new(log_n,r,p);
-  let mut salt=[0u8;SALT_LENGTH];
+  let mut salt=secmem(SALT_LENGTH);
   rng.fill_bytes(&mut salt);
-  let mut scrypt_pad=key.clone();
+  let mut scrypt_pad=secmem(key.len());
   scrypt(&passphrase[..],&salt[..],&params,&mut scrypt_pad[..]);
-  let mut output:Vec<u8>=Vec::with_capacity(9+MAC_LENGTH+key.len());
-  output.extend_from_slice(&[
+  let mut output=secmem(9+SALT_LENGTH+MAC_LENGTH+key.len());
+  memcpy(&[
     log_n,
     ((r&(255u32<<24))>>24) as u8,
     ((r&(255u32<<16))>>16) as u8,
@@ -127,8 +148,8 @@ fn encrypt_key(key:&Vec<u8>)->Vec<u8>{
     ((p&(255u32<<16))>>16) as u8,
     ((p&(255u32<<8))>>8) as u8,
     (p&(255u32)) as u8
-  ][..]);
-  output.extend_from_slice(&salt[..]);
+  ][..],&mut output[0..9]).expect("buffer size mismatch");
+  memcpy(&salt[..],&mut output[9..9+SALT_LENGTH]).expect("buffer size mismatch");
   {
     let mac=xor8(
       &Blake2b::default()
@@ -138,16 +159,19 @@ fn encrypt_key(key:&Vec<u8>)->Vec<u8>{
         .with_size(MAC_LENGTH)
           .hash::<Vec<u8>>(&scrypt_pad)
     ).unwrap();
-    output.extend_from_slice(&mac[..]);
+    assert_eq!(mac.len(),MAC_LENGTH);
+    memcpy(&mac[..],&mut output[9+SALT_LENGTH..9+SALT_LENGTH+MAC_LENGTH])
+      .expect("buffer size mismatch");
   }
   {
     let encrypted_key=xor8(&scrypt_pad,&key).unwrap();
-    output.extend_from_slice(&encrypted_key[..]);
+    memcpy(&encrypted_key[..],&mut output[9+SALT_LENGTH+MAC_LENGTH..])
+      .expect("buffer size mismatch");
   }
   return output;
 }
 
-fn decrypt_key(key:&Vec<u8>)->Vec<u8>{
+fn decrypt_key(key:&[u8])->Buffer{
   let mut passphrase:Vec<u8>=
       prompt_password_stderr("Passphrase: ")
         .unwrap()
@@ -162,21 +186,21 @@ fn decrypt_key(key:&Vec<u8>)->Vec<u8>{
       ((key[6] as u32)<<16u32)|
       ((key[7] as u32)<<8u32)|
       ((key[8] as u32));
-    let salt:Vec<u8>=Vec::from(&key[9..9+MAC_LENGTH]);
-    let mac:Vec<u8>=Vec::from(&key[9+MAC_LENGTH..9+2*MAC_LENGTH]);
-    let encrypted_key:Vec<u8>=Vec::from(&key[9+2*MAC_LENGTH..]);
+    let salt:&[u8]=&key[9..9+MAC_LENGTH];
+    let mac:&[u8]=&key[9+MAC_LENGTH..9+2*MAC_LENGTH];
+    let encrypted_key:&[u8]=&key[9+2*MAC_LENGTH..];
     let params=ScryptParams::new(log_n,r,p);
-    let mut scrypt_pad=encrypted_key.clone();
+    let mut scrypt_pad=secmem(encrypted_key.len());
     scrypt(&passphrase[..],&salt[..],&params,&mut scrypt_pad[..]);
     let decrypted_key=xor8(&scrypt_pad,&encrypted_key).unwrap();
-    if mac==xor8(
+    if &mac[..]==&xor8(
         &Blake2b::default()
           .with_size(MAC_LENGTH)
             .hash::<Vec<u8>>(&decrypted_key),
         &Blake2b::default()
           .with_size(MAC_LENGTH)
             .hash::<Vec<u8>>(&scrypt_pad)
-      ).unwrap(){
+      ).unwrap()[..]{
       return decrypted_key;
       } else {
         passphrase=prompt_password_stderr("Wrong passphrase.\n Try again: ")
@@ -206,7 +230,7 @@ fn keygen(name:&String)->Vec<u8>{
   return fpr;
 }
 
-fn decrypt_data(ciphertext:&Vec<u8>,sk_bytes:&Vec<u8>)->Option<Vec<u8>>{
+fn decrypt_data(ciphertext:&[u8],sk_bytes:&[u8])->Option<Vec<u8>>{
   let sk:<NewHope as KeyExchange>::PrivateKey =
     <NewHope as KeyExchange>::
       PrivateKey::
@@ -253,7 +277,7 @@ fn decrypt_file(input:Option<&String>, output:Option<&String>){
   let hash=Vec::from(&ciphertext[0..FPR_LENGTH]);
   let ciphertext=Vec::from(&ciphertext[FPR_LENGTH..]);
   let sk_bytes=decrypt_key(&get_key(&setup_directory(),&hash,SK_EXT).expect("private key not found"));
-  let plaintext=decrypt_data(&ciphertext,&sk_bytes).unwrap();
+  let plaintext=decrypt_data(&ciphertext[..],&sk_bytes[..]).unwrap();
   match output{
     None => assert_eq!(io::stdout().write(&plaintext).unwrap(),plaintext.len()),
     Some(name) => assert_eq!(File::create(name).unwrap().write(&plaintext).unwrap(),plaintext.len())
@@ -332,7 +356,7 @@ fn run_tests(){
     println!("{}","testing key encryption...");
     let mut testvec:Vec<u8>=Vec::from(&[0;1<<16][..]);
     rng.fill_bytes(&mut testvec[..]);
-    assert_eq!(testvec,decrypt_key(&encrypt_key(&testvec)));
+    assert_eq!(&testvec[..],&decrypt_key(&encrypt_key(&testvec[..])[..])[..]);
   }
   {
     println!("{}","testing data encryption...");
