@@ -19,7 +19,7 @@ rustc-serialize = "0.3.19"
 gcrypt = "0.4"
 
 [dependencies.sarkara]
-version = "0.5.1"
+version = "0.8.1"
 default-features = false
 
 [features]
